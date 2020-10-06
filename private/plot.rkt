@@ -80,7 +80,6 @@
 ;; Parameters, constants
 
 (define TICK-SIZE 4)
-(define TITLE-FACE "Liberation Serif")
 
 (define axis/c
   (flat-named-contract 'axis/c (or/c 'X 'Y)))
@@ -89,6 +88,7 @@
   (begin (define id (make-parameter val))
          (provide id)))
 
+(defparam *TITLE-FACE* (cons 'bold "Liberation Serif") text-style/c)
 (defparam *BAR-WIDTH* 0.1 Real)
 (defparam *CACHE-SIZE* (expt 2 16) Natural) ;; max num. configs to store in memory
 (defparam *CONFIDENCE-LEVEL* 95 Percent)
@@ -110,7 +110,9 @@
 (defparam *LEGEND-HSPACE* 20 Pict-Units)
 (defparam *LEGEND-VSPACE* 10 Pict-Units)
 (defparam *OVERHEAD-LEGEND?* #true Boolean)
+(defparam *OVERHEAD-COLOR-LEGEND?* #true Boolean)
 (defparam *LEGEND?* #true Boolean)
+(defparam *COLOR-LEGEND?* #true Boolean)
 (defparam *GRID-X* 600 Natural)
 (defparam *GRID-Y* 1300 Natural)
 (defparam *GRID-X-SKIP* 30 Natural)
@@ -127,6 +129,7 @@
 (defparam *OVERHEAD-PLOT-HEIGHT* 300 Pict-Units)
 (defparam *OVERHEAD-PLOT-WIDTH* 600 Pict-Units)
 (defparam *OVERHEAD-SAMPLES* 20 Natural)
+(defparam *OVERHEAD-SHOW-CONFIGURATIONS* #t Boolean)
 (defparam *OVERHEAD-SHOW-RATIO* #t (U Symbol Boolean))
 (defparam *POINT-ALPHA* 0.4 Nonnegative-Real)
 (defparam *POINT-COLOR* 2 plot-color/c)
@@ -137,12 +140,20 @@
 (defparam *RATIO-DOT-SIZE* 8 Natural)
 (defparam *RATIO-DOT-SYM* 'plus point-sym/c)
 (defparam *RECTANGLE-BORDER-COLOR* "black" Color)
-(defparam *SAMPLE-COLOR* "chocolate" Color)
+(defparam *SAMPLE-COLOR* 3 Color)
 (defparam *STANDARD-D* #f (or/c #f positive?))
 (defparam *TICK-GRID?* #true boolean?)
 (defparam *TYPED/UNTYPED-RATIO-XTICK?* #f Boolean)
 (defparam *EXACT-RUNTIME-BASELINE?* #f Boolean)
 (defparam *AUTO-POINT-ALPHA?* #true Boolean)
+
+(define (rounding x)
+  (define x* (exact-ceiling x))
+  (cond
+    [(>= x* 20)
+     (* 10 (exact-ceiling (/ x* 10)))]
+    [(odd? x*) (add1 x*)]
+    [else x*]))
 
 ;; -----------------------------------------------------------------------------
 
@@ -172,7 +183,7 @@
                  [pi-index (in-naturals 0)]
                  [sym (make-point-symbol*)])
         (define pi-color (+ pi-index color0))
-        (parameterize ([*POINT-COLOR* pi-color]
+        (parameterize ([*POINT-COLOR* ((*BRUSH-COLOR-CONVERTER*) pi-color)]
                        [*POINT-SIZE* size/num-units]
                        [*POINT-ALPHA* alpha/num-units]
                        [*POINT-SYMBOL* sym])
@@ -194,7 +205,7 @@
                       #:size (hash-ref cfg-style 'size (*POINT-SIZE*))
                       #:sym (hash-ref cfg-style 'sym (*POINT-SYMBOL*)))
               acc))))))
-  (define y-max (exact-ceiling (unbox max-runtime)))
+  (define y-max (rounding (exact-ceiling (unbox max-runtime))))
   (define body (maybe-freeze
     (parameterize ([plot-x-ticks (make-exact-runtime-xticks num-units)]
                    [plot-y-ticks (make-exact-runtime-yticks y-max)]
@@ -202,7 +213,7 @@
                    [plot-y-far-ticks no-ticks]
                    [plot-tick-size TICK-SIZE]
                    [plot-font-face (*OVERHEAD-FONT-FACE*)]
-                   [plot-font-size (*FONT-SIZE*)])
+                   [plot-font-size (* 0.75 (*FONT-SIZE*))])
       (plot-pict elem*
         #:x-min (- 0 0.5)
         #:x-max (+ num-units 0.5)
@@ -215,7 +226,7 @@
   (define base-pict
     (exact-add-legend (performance-info->name (car pi*)) (unbox num-points) body))
   (begin0
-    (if (and multi? (*LEGEND?*))
+    (if (and multi? (*COLOR-LEGEND?*))
       (add-color-legend base-pict (make-color-legend pi* color0))
       base-pict)
     (log-gtp-plot-info "rendering finished")))
@@ -235,7 +246,7 @@
                    [plot-y-far-ticks no-ticks]
                    [plot-tick-size TICK-SIZE]
                    [plot-font-face (*OVERHEAD-FONT-FACE*)]
-                   [plot-font-size (*FONT-SIZE*)]
+                   [plot-font-size (* 0.75 (*FONT-SIZE*))]
                    [*INTERVAL-ALPHA* (if multi? (*MULTI-INTERVAL-ALPHA*) (*INTERVAL-ALPHA*))])
       (plot-pict
         (list
@@ -261,7 +272,7 @@
     ;; TODO don't just use car
     (overhead-add-legend (car pi*) body))
   (begin0
-    (if (and multi? legend?)
+    (if (and multi? (*OVERHEAD-COLOR-LEGEND?*))
       (add-color-legend base-pict (make-color-legend pi* color0))
       base-pict)
     (log-gtp-plot-info "rendering finished")))
@@ -300,7 +311,7 @@
     (log-gtp-plot-info "rendering finished")))
 
 (define (make-grace-bars pi)
-  ;; TODO generalize ... 
+  ;; TODO generalize ...
   (log-gtp-plot-info "rendering grace-bars for ~a" pi)
   (define num-units (performance-info->num-units pi))
   (define bar-width 4)
@@ -389,7 +400,7 @@
                    [plot-y-far-ticks no-ticks]
                    [plot-tick-size TICK-SIZE]
                    [plot-font-face (*OVERHEAD-FONT-FACE*)]
-                   [plot-font-size (*FONT-SIZE*)]
+                   [plot-font-size (* 0.75 (*FONT-SIZE*))]
                    [*INTERVAL-ALPHA* (*SAMPLE-INTERVAL-ALPHA*)]
                    [*INTERVAL-STYLE* (*SAMPLE-INTERVAL-STYLE*)])
       (plot-pict
@@ -416,7 +427,7 @@
   (define base-pict
     (samples-add-legend (car si*) sample-size num-samples body))
   (begin0
-    (if (and (*LEGEND?*) multi?)
+    (if (and (*LEGEND?*) multi? (*OVERHEAD-COLOR-LEGEND?*))
       (add-color-legend base-pict (make-color-legend si* color0))
       base-pict)
     (log-gtp-plot-info "rendering finished")))
@@ -798,13 +809,14 @@
   (define f1 (cached (->deliverable-counter m1)))
   (define (lo0 n) 0)
   (define (lo1 n) 0)
+  ;; TODO: Remove
   (list
     (parameterize ([*OVERHEAD-LINE-COLOR* color1])
       (make-overhead-function-interval lo1 f1))
     (parameterize ([*OVERHEAD-LINE-COLOR* color0])
       (list (make-overhead-function-interval lo0 f0)
-            (make-sample-function-interval pi*0)))
-    (parameterize ([*OVERHEAD-LINE-COLOR* color1])
+            #;(make-sample-function-interval pi*0)))
+    #;(parameterize ([*OVERHEAD-LINE-COLOR* color1])
       (make-sample-function-interval pi*1))))
 
 (define (make-count-configurations-function pi #:interval? [ivl #t])
@@ -965,9 +977,9 @@
              (define v (pre-tick-value pt))
              (cond
               [(= v max-runtime)
-               (format "~ams" v)]
+               (format "~a s" (~r (/ v 1000) #:precision 1))]
               [else
-               (~r v #:precision 1)])))))
+               (~r (/ v 1000) #:precision 1)])))))
 
 (define ((real*->ticks-layout x*) ax-min ax-max)
   (for/list ([x (in-list x*)])
@@ -1063,7 +1075,7 @@
       (hc-append 2 color lbl))))
 
 (define (title-text str [angle 0])
-  (text str (cons 'bold TITLE-FACE) (*FONT-SIZE*) angle))
+  (text str (*TITLE-FACE*) (*FONT-SIZE*) angle))
 
 (define (render-benchmark-name sym)
   (title-text (symbol->string sym)))
@@ -1082,7 +1094,9 @@
     (rnd n)))
 
 (define (render-count n descr)
-  (title-text (format "~a ~a" (add-commas n) descr)))
+  (if (*OVERHEAD-SHOW-CONFIGURATIONS*)
+      (title-text (format "~a ~a" (add-commas n) descr))
+      (blank 0 0)))
 
 (define (check= v*)
   (let loop ([v* v*])
@@ -1211,4 +1225,3 @@
     (check-exn exn:fail:contract?
       (lambda () (pi2->name 'test-case espionage fsm))))
 )
-
